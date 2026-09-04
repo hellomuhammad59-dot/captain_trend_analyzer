@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>محلل مسار أداء الكباتن</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0a0d12;
+    --panel:#12161d;
+    --panel2:#171c25;
+    --line:#232a35;
+    --text:#e7ebf1;
+    --dim:#8b93a1;
+    --accent:#4fd1a5;
+    --accent-dim:#1f4a3c;
+    --bad:#e5636b;
+    --bad-dim:#3e2226;
+    --warn:#e8b34a;
+    --warn-dim:#3e3320;
+    --grid: rgba(255,255,255,0.035);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(circle at 1px 1px, var(--grid) 1px, transparent 1px) 0 0/22px 22px,
+      var(--bg);
+    color:var(--text);
+    font-family:'Segoe UI', 'Tahoma', system-ui, sans-serif;
+    min-height:100vh;
+  }
+  header{
+    padding:28px 32px 20px;
+    border-bottom:1px solid var(--line);
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:16px;
+  }
+  header h1{
+    margin:0;
+    font-size:22px;
+    font-weight:700;
+    letter-spacing:0.2px;
+  }
+  header p{margin:6px 0 0; color:var(--dim); font-size:13px;}
+  .stats-row{display:flex; gap:22px; flex-wrap:wrap;}
+  .stat{text-align:center;}
+  .stat .num{font-size:20px; font-weight:700;}
+  .stat .lbl{font-size:11px; color:var(--dim); margin-top:2px;}
+
+  main{padding:24px 32px 60px; max-width:1400px; margin:0 auto;}
+
+  .upload-zone{
+    border:1.5px dashed var(--line);
+    border-radius:14px;
+    background:var(--panel);
+    padding:36px 20px;
+    text-align:center;
+    cursor:pointer;
+    transition:border-color .2s, background .2s;
+  }
+  .upload-zone.drag{border-color:var(--accent); background:var(--panel2);}
+  .upload-zone h3{margin:0 0 6px; font-size:16px;}
+  .upload-zone p{margin:0; color:var(--dim); font-size:13px;}
+  .upload-zone input{display:none;}
+
+  .file-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px;}
+  .chip{
+    background:var(--panel2);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:6px 10px;
+    font-size:12px;
+    color:var(--dim);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .chip b{color:var(--text); font-weight:600;}
+  .chip .x{cursor:pointer; color:var(--bad); font-weight:700;}
+
+  .controls{
+    display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:20px 0;
+  }
+  select, input[type=text]{
+    background:var(--panel2);
+    border:1px solid var(--line);
+    color:var(--text);
+    padding:9px 12px;
+    border-radius:8px;
+    font-size:13px;
+    outline:none;
+  }
+  select:focus, input:focus{border-color:var(--accent);}
+  button.primary{
+    background:var(--accent);
+    color:#06110d;
+    border:none;
+    padding:9px 18px;
+    border-radius:8px;
+    font-weight:700;
+    font-size:13px;
+    cursor:pointer;
+  }
+  button.primary:disabled{opacity:0.4; cursor:not-allowed;}
+  button.ghost{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--dim);
+    padding:9px 14px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  button.ghost:hover{color:var(--text); border-color:var(--dim);}
+
+  .section-title{
+    font-size:14px; font-weight:700; color:var(--dim);
+    margin:28px 0 12px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .section-title .line{flex:1; height:1px; background:var(--line);}
+
+  .kpi-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:6px;}
+  .kpi{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px;}
+  .kpi .num{font-size:22px; font-weight:700;}
+  .kpi .lbl{font-size:11px; color:var(--dim); margin-top:4px;}
+  .kpi.improve .num{color:var(--accent);}
+  .kpi.decline .num{color:var(--bad);}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  thead th{
+    text-align:right;
+    color:var(--dim);
+    font-weight:600;
+    font-size:11px;
+    padding:8px 10px;
+    border-bottom:1px solid var(--line);
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  thead th:hover{color:var(--text);}
+  tbody td{padding:9px 10px; border-bottom:1px solid var(--line); white-space:nowrap;}
+  tbody tr{cursor:pointer; transition:background .12s;}
+  tbody tr:hover{background:var(--panel2);}
+  .table-wrap{background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:auto; max-height:560px;}
+
+  .badge{
+    display:inline-flex; align-items:center; gap:5px;
+    padding:4px 9px; border-radius:100px; font-size:11px; font-weight:700;
+  }
+  .badge.up{background:var(--accent-dim); color:var(--accent);}
+  .badge.up2{background:var(--accent-dim); color:var(--accent);}
+  .badge.down{background:var(--bad-dim); color:var(--bad);}
+  .badge.down2{background:var(--bad-dim); color:var(--bad);}
+  .badge.flat{background:var(--warn-dim); color:var(--warn);}
+  .badge.new{background:#232a35; color:var(--dim);}
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(3,5,8,0.72);
+    display:none; align-items:center; justify-content:center; z-index:50; padding:20px;
+  }
+  .modal-overlay.show{display:flex;}
+  .modal{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    width:100%; max-width:820px; max-height:88vh; overflow:auto; padding:26px;
+  }
+  .modal h2{margin:0 0 4px; font-size:19px;}
+  .modal .sub{color:var(--dim); font-size:13px; margin-bottom:18px;}
+  .modal .close{float:left; cursor:pointer; color:var(--dim); font-size:20px;}
+  .chart-box{background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:14px; margin-top:16px;}
+
+  .empty{
+    text-align:center; padding:60px 20px; color:var(--dim);
+  }
+  .footnote{color:var(--dim); font-size:11px; margin-top:8px;}
+  ::-webkit-scrollbar{width:8px; height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>محلل مسار أداء الكباتن</h1>
+    <p>ارفع ملفات الأداء اليومية/الدورية (Excel) — يقارن كل كابتن عبر الأيام ويحدد مساره: تحسن أم تراجع</p>
+  </div>
+  <div class="stats-row" id="headerStats"></div>
+</header>
+
+<main>
+
+  <div class="upload-zone" id="dropZone">
+    <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv">
+    <h3>اسحب الملفات هنا أو اضغط للاختيار</h3>
+    <p>يدعم عدة ملفات دفعة واحدة — كل ملف يمثل يوم أو فترة قياس. لا حاجة لملف موحّد.</p>
+  </div>
+  <div class="file-chips" id="fileChips"></div>
+
+  <div class="controls" id="mainControls" style="display:none;">
+    <select id="cityFilter"><option value="">كل المدن</option></select>
+    <select id="storeFilter"><option value="">كل المتاجر</option></select>
+    <select id="trendFilter">
+      <option value="">كل المسارات</option>
+      <option value="up2">تحسن ملحوظ</option>
+      <option value="up">تحسن طفيف</option>
+      <option value="flat">مستقر</option>
+      <option value="down">تراجع طفيف</option>
+      <option value="down2">تراجع ملحوظ</option>
+      <option value="new">جديد / بيانات غير كافية</option>
+    </select>
+    <input type="text" id="searchBox" placeholder="بحث برقم الكابتن أو الاسم أو المتجر">
+    <button class="ghost" id="exportBtn">تصدير CSV</button>
+    <button class="ghost" id="resetBtn">مسح الكل</button>
+  </div>
+
+  <div id="resultsArea"></div>
+
+</main>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <span class="close" id="modalClose">&times;</span>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+// ---------- State ----------
+let uploadedFiles = []; // {name, dayLabel}
+let rawRows = []; // unified rows across all files
+let captainSeries = {}; // captain_id -> {name, city, store, days:[{day,...metrics}]}
+let allDays = []; // global sorted list of distinct days across all uploads
+let currentSort = {key:'trendScore', dir:'desc'};
+let chartInstance = null;
+
+// ---------- Column normalization ----------
+// Accepts flexible header names (Sheet1 style raw, or Sheet4 pivot style)
+const COLMAP = {
+  day: ['day','date','التاريخ'],
+  captain_id: ['captain_id','captain id','id','row labels','رقم الكابتن'],
+  name: ['name','name ','الاسم'],
+  city_code: ['city_code','city code','المدينة'],
+  store_code: ['store_code','store code','store code ','store','المتجر'],
+  total_orders: ['total_orders','sum of total_orders','الطلبات'],
+  on_time_pickups: ['on_time_pickups','average of on_time_pickups'],
+  pickup_success_pct: ['pickup_success_pct','average of pickup_success_pct'],
+  on_time_deliveries: ['on_time_deliveries','average of on_time_deliveries'],
+  success_rate_pct: ['prefomance','prefomance ','performance','success_rate_pct','average of success_rate_pct','average of delivery_success_rate_pct','delivery_success_rate_pct'],
+  avg_delay_min: ['avg_delay_min','average of avg_delay_min'],
+  max_delay_min: ['max_delay_min','average of max_delay_min'],
+  avg_customer_handling_min: ['avg_customer_handling_min','average of avg_customer_handling_min'],
+  customer_handling_success_pct: ['customer_handling_success_pct','average of customer_handling_success_pct'],
+  is_bad: ['is_bad'],
+  bad_days: ['bad days ','bad_days_delivery_last7','bad_days_pickup_last7']
+};
+
+function normHeader(h){
+  return String(h||'').trim().toLowerCase();
+}
+
+function buildColIndex(headers){
+  const idx = {};
+  const normed = headers.map(normHeader);
+  for(const key in COLMAP){
+    for(const cand of COLMAP[key]){
+      const i = normed.indexOf(cand.toLowerCase());
+      if(i !== -1){ idx[key] = i; break; }
+    }
+  }
+  return idx;
+}
+
+function excelDateToStr(v){
+  if(v instanceof Date){
+    return `${v.getFullYear()}-${String(v.getMonth()+1).padStart(2,'0')}-${String(v.getDate()).padStart(2,'0')}`;
+  }
+  if(typeof v === 'number'){
+    // Excel serial date
+    const d = XLSX.SSF.parse_date_code(v);
+    if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  if(typeof v === 'string'){
+    const s = v.trim();
+    // already ISO: 2026-09-01
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    // d/m/y or d-m-y (Gulf convention: day first)
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if(m){
+      let [, a, b, y] = m;
+      if(y.length===2) y = '20'+y;
+      // day/month/year assumed (common in KSA); if first part >12 it must be the day anyway
+      let day = a, month = b;
+      if(parseInt(b,10) > 12 && parseInt(a,10) <= 12){
+        // second part can't be a month, so it must be month/day/year format instead
+        day = b; month = a;
+      }
+      return `${y}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+    return s;
+  }
+  return String(v||'');
+}
+
+// ---------- File handling ----------
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+dropZone.addEventListener('click', ()=>fileInput.click());
+dropZone.addEventListener('dragover', e=>{e.preventDefault(); dropZone.classList.add('drag');});
+dropZone.addEventListener('dragleave', ()=>dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e=>{
+  e.preventDefault(); dropZone.classList.remove('drag');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e=>handleFiles(e.target.files));
+
+function handleFiles(fileList){
+  const files = Array.from(fileList);
+  let pending = files.length;
+  files.forEach(file=>{
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      try{
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        // Prefer a sheet that looks like raw per-captain rows (has captain_id column)
+        let chosenSheet = null;
+        for(const sn of wb.SheetNames){
+          const ws = wb.Sheets[sn];
+          const json = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:null});
+          if(json.length < 2) continue;
+          const idx = buildColIndex(json[0]);
+          if(idx.captain_id !== undefined || idx.store_code !== undefined){
+            chosenSheet = {json, idx, name:sn};
+            if(idx.captain_id !== undefined) break; // prefer raw captain_id sheet
+          }
+        }
+        if(!chosenSheet){ alert('لم يتم التعرف على أعمدة صالحة في الملف: '+file.name); pending--; return; }
+        ingestSheet(chosenSheet.json, chosenSheet.idx, file.name);
+        uploadedFiles.push({name:file.name});
+      }catch(err){
+        console.error(err);
+        alert('تعذر قراءة الملف: '+file.name);
+      }
+      pending--;
+      if(pending===0){ renderFileChips(); processAndRender(); }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function ingestSheet(json, idx, filename){
+  const headerRow = json[0];
+  for(let r=1;r<json.length;r++){
+    const row = json[r];
+    if(!row || row.every(c=>c===null||c==='')) continue;
+    const get = (key)=> idx[key]!==undefined ? row[idx[key]] : undefined;
+    let captain_id = get('captain_id');
+    if(captain_id === undefined || captain_id === null || captain_id === '') continue;
+    captain_id = String(captain_id).trim();
+
+    let dayVal = get('day');
+    let dayStr = dayVal!==undefined && dayVal!==null ? excelDateToStr(dayVal) : filename;
+
+    const rec = {
+      captain_id,
+      day: dayStr,
+      name: get('name') ? String(get('name')).trim() : null,
+      city_code: get('city_code') ? String(get('city_code')).trim() : null,
+      store_code: get('store_code') ? String(get('store_code')).trim() : null,
+      total_orders: toNum(get('total_orders')),
+      pickup_success_pct: toNum(get('pickup_success_pct')),
+      success_rate_pct: toNum(get('success_rate_pct')),
+      avg_delay_min: toNum(get('avg_delay_min')),
+      customer_handling_success_pct: toNum(get('customer_handling_success_pct')),
+      is_bad: toNum(get('is_bad'))
+    };
+    rawRows.push(rec);
+  }
+}
+
+function toNum(v){
+  if(v===undefined||v===null||v==='') return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+
+function renderFileChips(){
+  const el = document.getElementById('fileChips');
+  el.innerHTML = uploadedFiles.map((f,i)=>`<div class="chip"><b>${escapeHtml(f.name)}</b><span class="x" data-i="${i}">×</span></div>`).join('');
+  el.querySelectorAll('.x').forEach(x=>{
+    x.addEventListener('click', ()=>{
+      // full recompute is simplest: just note we can't selectively remove rows easily without filename tag
+      alert('لإزالة ملف بدقة، يفضل الضغط على "مسح الكل" وإعادة رفع الملفات المطلوبة.');
+    });
+  });
+}
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  uploadedFiles = []; rawRows = []; captainSeries = {};
+  document.getElementById('fileChips').innerHTML = '';
+  document.getElementById('mainControls').style.display = 'none';
+  document.getElementById('resultsArea').innerHTML = '';
+  document.getElementById('headerStats').innerHTML = '';
+  fileInput.value = '';
+});
+
+// ---------- Aggregation & trend logic ----------
+function processAndRender(){
+  captainSeries = {};
+  rawRows.forEach(r=>{
+    if(!captainSeries[r.captain_id]){
+      captainSeries[r.captain_id] = {
+        captain_id: r.captain_id,
+        name: r.name,
+        city_code: r.city_code,
+        store_code: r.store_code,
+        byDay: {}
+      };
+    }
+    const cs = captainSeries[r.captain_id];
+    if(r.name) cs.name = r.name;
+    if(r.city_code) cs.city_code = r.city_code;
+    if(r.store_code) cs.store_code = r.store_code;
+
+    if(!cs.byDay[r.day]) cs.byDay[r.day] = {n:0, orders:0, success_sum:0, success_n:0, delay_sum:0, delay_n:0, pickup_sum:0, pickup_n:0, handling_sum:0, handling_n:0, bad_sum:0};
+    const d = cs.byDay[r.day];
+    d.n += 1;
+    if(r.total_orders!==null) d.orders += r.total_orders;
+    if(r.success_rate_pct!==null){ d.success_sum += r.success_rate_pct; d.success_n++; }
+    if(r.avg_delay_min!==null){ d.delay_sum += r.avg_delay_min; d.delay_n++; }
+    if(r.pickup_success_pct!==null){ d.pickup_sum += r.pickup_success_pct; d.pickup_n++; }
+    if(r.customer_handling_success_pct!==null){ d.handling_sum += r.customer_handling_success_pct; d.handling_n++; }
+    if(r.is_bad!==null) d.bad_sum += r.is_bad;
+  });
+
+  // build sorted day series per captain with computed averages
+  Object.values(captainSeries).forEach(cs=>{
+    const days = Object.keys(cs.byDay).sort();
+    cs.days = days.map(day=>{
+      const d = cs.byDay[day];
+      return {
+        day,
+        orders: d.orders,
+        success_rate_pct: d.success_n ? d.success_sum/d.success_n : null,
+        avg_delay_min: d.delay_n ? d.delay_sum/d.delay_n : null,
+        pickup_success_pct: d.pickup_n ? d.pickup_sum/d.pickup_n : null,
+        customer_handling_success_pct: d.handling_n ? d.handling_sum/d.handling_n : null,
+        is_bad: d.bad_sum
+      };
+    });
+    computeTrend(cs);
+  });
+
+  // global sorted list of distinct days across all captains (used as dynamic table columns)
+  const daySet = new Set();
+  Object.values(captainSeries).forEach(cs=>cs.days.forEach(d=>daySet.add(d.day)));
+  allDays = [...daySet].sort();
+
+  populateFilters();
+  updateHeaderStats();
+  document.getElementById('mainControls').style.display = 'flex';
+  renderTable();
+}
+
+// Performance score per day = نسبة النجاح (performance) فقط، بدون خصومات
+function dayScore(d){
+  if(d.success_rate_pct===null) return null;
+  return d.success_rate_pct * 100; // 0-100
+}
+
+function computeTrend(cs){
+  const scored = cs.days.map(d=>({...d, score:dayScore(d)})).filter(d=>d.score!==null);
+  cs.pointsUsed = scored.length;
+  if(scored.length < 2){
+    cs.trend = 'new';
+    cs.trendScore = 0;
+    cs.latestScore = scored.length ? scored[scored.length-1].score : null;
+    cs.firstScore = scored.length ? scored[0].score : null;
+    return;
+  }
+  // use actual first day and last day performance values (not averaged halves)
+  const firstVal = scored[0].score;
+  const lastVal = scored[scored.length-1].score;
+  const delta = lastVal - firstVal;
+
+  cs.firstScore = firstVal;
+  cs.latestScore = lastVal;
+  cs.trendScore = Math.round(delta*10)/10;
+
+  if(delta >= 8) cs.trend = 'up2';
+  else if(delta >= 2.5) cs.trend = 'up';
+  else if(delta <= -8) cs.trend = 'down2';
+  else if(delta <= -2.5) cs.trend = 'down';
+  else cs.trend = 'flat';
+}
+
+const trendLabels = {
+  up2: {label:'تحسن ملحوظ', cls:'up2', icon:'▲▲'},
+  up: {label:'تحسن طفيف', cls:'up', icon:'▲'},
+  flat: {label:'مستقر', cls:'flat', icon:'―'},
+  down: {label:'تراجع طفيف', cls:'down', icon:'▼'},
+  down2: {label:'تراجع ملحوظ', cls:'down2', icon:'▼▼'},
+  new: {label:'بيانات غير كافية', cls:'new', icon:'•'}
+};
+
+// ---------- Filters ----------
+function populateFilters(){
+  const cities = new Set(), stores = new Set();
+  Object.values(captainSeries).forEach(cs=>{
+    if(cs.city_code) cities.add(cs.city_code);
+    if(cs.store_code) stores.add(cs.store_code);
+  });
+  const citySel = document.getElementById('cityFilter');
+  const storeSel = document.getElementById('storeFilter');
+  citySel.innerHTML = '<option value="">كل المدن</option>' + [...cities].sort().map(c=>`<option value="${c}">${c}</option>`).join('');
+  storeSel.innerHTML = '<option value="">كل المتاجر</option>' + [...stores].sort().map(s=>`<option value="${s}">${s}</option>`).join('');
+}
+
+['cityFilter','storeFilter','trendFilter'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', renderTable);
+});
+document.getElementById('searchBox').addEventListener('input', renderTable);
+
+// ---------- Header stats ----------
+function updateHeaderStats(){
+  const vals = Object.values(captainSeries);
+  const total = vals.length;
+  const up = vals.filter(v=>v.trend==='up'||v.trend==='up2').length;
+  const down = vals.filter(v=>v.trend==='down'||v.trend==='down2').length;
+  const days = new Set(); Object.values(captainSeries).forEach(c=>c.days.forEach(d=>days.add(d.day)));
+  document.getElementById('headerStats').innerHTML = `
+    <div class="stat"><div class="num">${total.toLocaleString()}</div><div class="lbl">إجمالي الكباتن</div></div>
+    <div class="stat"><div class="num" style="color:var(--accent)">${up.toLocaleString()}</div><div class="lbl">في تحسن</div></div>
+    <div class="stat"><div class="num" style="color:var(--bad)">${down.toLocaleString()}</div><div class="lbl">في تراجع</div></div>
+    <div class="stat"><div class="num">${days.size}</div><div class="lbl">عدد الأيام المرصودة</div></div>
+  `;
+}
+
+// ---------- Table rendering ----------
+function getFiltered(){
+  const city = document.getElementById('cityFilter').value;
+  const store = document.getElementById('storeFilter').value;
+  const trend = document.getElementById('trendFilter').value;
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  let vals = Object.values(captainSeries);
+  if(city) vals = vals.filter(v=>v.city_code===city);
+  if(store) vals = vals.filter(v=>v.store_code===store);
+  if(trend) vals = vals.filter(v=>v.trend===trend);
+  if(q) vals = vals.filter(v=>
+    v.captain_id.toLowerCase().includes(q) ||
+    (v.name||'').toLowerCase().includes(q) ||
+    (v.store_code||'').toLowerCase().includes(q)
+  );
+  vals.sort((a,b)=>{
+    let av = a[currentSort.key], bv = b[currentSort.key];
+    if(av===null||av===undefined) av = -9999;
+    if(bv===null||bv===undefined) bv = -9999;
+    if(typeof av==='string') return currentSort.dir==='asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    return currentSort.dir==='asc' ? av-bv : bv-av;
+  });
+  return vals;
+}
+
+function renderTable(){
+  const vals = getFiltered();
+  const area = document.getElementById('resultsArea');
+  if(vals.length===0){
+    area.innerHTML = `<div class="empty">لا توجد نتائج مطابقة للفلاتر الحالية</div>`;
+    return;
+  }
+
+  // map of day -> performance% lookup per captain, plus fixed cols
+  const rowsHtml = vals.slice(0, 500).map(cs=>{
+    const t = trendLabels[cs.trend];
+    const perfByDay = {};
+    cs.days.forEach(d=>{ perfByDay[d.day] = d.success_rate_pct; });
+    const dayCells = allDays.map(day=>{
+      const v = perfByDay[day];
+      return `<td><span dir="ltr">${v!==undefined && v!==null ? (v*100).toFixed(1)+'%' : '—'}</span></td>`;
+    }).join('');
+    const latest = cs.days[cs.days.length-1];
+    return `<tr data-id="${cs.captain_id}">
+      <td>${cs.captain_id}</td>
+      <td>${escapeHtml(cs.name||'—')}</td>
+      <td>${cs.store_code||'—'}</td>
+      <td>${cs.city_code||'—'}</td>
+      ${dayCells}
+      <td><span dir="ltr">${latest && latest.avg_delay_min!==null ? latest.avg_delay_min.toFixed(1) : '—'}</span></td>
+      <td><span dir="ltr">${cs.trendScore>0?'+':''}${cs.trendScore}%</span></td>
+      <td><span class="badge ${t.cls}">${t.icon} ${t.label}</span></td>
+    </tr>`;
+  }).join('');
+
+  const dayHeaders = allDays.map((day,i)=>`<th>أداء ${i+1}<br><span style="font-weight:400; color:var(--dim);">${day}</span></th>`).join('');
+
+  area.innerHTML = `
+    <div class="section-title"><span>قائمة الكباتن (${vals.length.toLocaleString()})</span><span class="line"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th data-key="captain_id">رقم الكابتن</th>
+          <th data-key="name">الاسم</th>
+          <th data-key="store_code">المتجر</th>
+          <th data-key="city_code">المدينة</th>
+          ${dayHeaders}
+          <th data-key="avg_delay_min">آخر تأخير</th>
+          <th data-key="trendScore">التغير في الأداء</th>
+          <th data-key="trend">المسار</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    ${vals.length>500?`<div class="footnote">عرض أول 500 نتيجة من ${vals.length} — استخدم الفلاتر أو البحث لتضييق النتائج</div>`:''}
+  `;
+
+  area.querySelectorAll('thead th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key = th.dataset.key;
+      if(currentSort.key===key) currentSort.dir = currentSort.dir==='asc'?'desc':'asc';
+      else { currentSort.key = key; currentSort.dir = 'desc'; }
+      renderTable();
+    });
+  });
+  area.querySelectorAll('tbody tr').forEach(tr=>{
+    tr.addEventListener('click', ()=>openDetail(tr.dataset.id));
+  });
+}
+
+// ---------- Detail modal ----------
+function openDetail(captainId){
+  const cs = captainSeries[captainId];
+  if(!cs) return;
+  const t = trendLabels[cs.trend];
+  const modal = document.getElementById('modalContent');
+  modal.innerHTML = `
+    <span class="close" id="modalClose2">&times;</span>
+    <h2>${escapeHtml(cs.name||'—')} <span style="color:var(--dim); font-weight:400;">#${cs.captain_id}</span></h2>
+    <div class="sub">${cs.store_code||'—'} · ${cs.city_code||'—'} · <span class="badge ${t.cls}">${t.icon} ${t.label}</span></div>
+    <div class="kpi-grid">
+      <div class="kpi ${cs.trendScore>0?'improve':cs.trendScore<0?'decline':''}">
+        <div class="num"><span dir="ltr">${cs.trendScore>0?'+':''}${cs.trendScore}%</span></div>
+        <div class="lbl">التغير في الأداء (performance)</div>
+      </div>
+      <div class="kpi"><div class="num">${cs.days.length}</div><div class="lbl">عدد أيام الرصد</div></div>
+      <div class="kpi"><div class="num"><span dir="ltr">${cs.firstScore!==null?cs.firstScore.toFixed(1)+'%':'—'}</span></div><div class="lbl">متوسط أداء أول فترة</div></div>
+      <div class="kpi"><div class="num"><span dir="ltr">${cs.latestScore!==null?cs.latestScore.toFixed(1)+'%':'—'}</span></div><div class="lbl">متوسط أداء آخر فترة</div></div>
+    </div>
+    <div class="chart-box"><canvas id="detailChart" height="110"></canvas></div>
+  `;
+  document.getElementById('modalClose2').addEventListener('click', closeModal);
+  document.getElementById('modalOverlay').classList.add('show');
+
+  const ctx = document.getElementById('detailChart').getContext('2d');
+  if(chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: cs.days.map(d=>d.day),
+      datasets:[
+        {
+          label:'الأداء (performance) %',
+          data: cs.days.map(d=>d.success_rate_pct!==null?+(d.success_rate_pct*100).toFixed(1):null),
+          borderColor:'#4fd1a5', backgroundColor:'rgba(79,209,165,0.1)',
+          tension:0.3, spanGaps:true, yAxisID:'y'
+        },
+        {
+          label:'متوسط التأخير (دقيقة)',
+          data: cs.days.map(d=>d.avg_delay_min),
+          borderColor:'#e8b34a', backgroundColor:'rgba(232,179,74,0.1)',
+          tension:0.3, spanGaps:true, yAxisID:'y1'
+        }
+      ]
+    },
+    options:{
+      responsive:true,
+      interaction:{mode:'index', intersect:false},
+      plugins:{ legend:{ labels:{ color:'#e7ebf1' } } },
+      scales:{
+        x:{ ticks:{ color:'#8b93a1' }, grid:{ color:'rgba(255,255,255,0.04)' } },
+        y:{ position:'left', ticks:{ color:'#8b93a1' }, grid:{ color:'rgba(255,255,255,0.04)' }, title:{display:true,text:'%',color:'#8b93a1'} },
+        y1:{ position:'right', ticks:{ color:'#8b93a1' }, grid:{ display:false }, title:{display:true,text:'دقيقة',color:'#8b93a1'} }
+      }
+    }
+  });
+}
+
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('show'); }
+document.getElementById('modalClose').addEventListener('click', closeModal);
+document.getElementById('modalOverlay').addEventListener('click', (e)=>{ if(e.target.id==='modalOverlay') closeModal(); });
+
+// ---------- Export ----------
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const vals = getFiltered();
+  const dayHeaders = allDays.map((day,i)=>`أداء_${i+1}_${day}`);
+  const header = ['captain_id','name','store_code','city_code', ...dayHeaders, 'first_avg_performance_pct','latest_avg_performance_pct','performance_change_pct','trend_label'];
+  const rows = vals.map(cs=>{
+    const perfByDay = {};
+    cs.days.forEach(d=>{ perfByDay[d.day] = d.success_rate_pct; });
+    const dayVals = allDays.map(day=> perfByDay[day]!==undefined && perfByDay[day]!==null ? (perfByDay[day]*100).toFixed(1) : '');
+    return [
+      cs.captain_id, cs.name||'', cs.store_code||'', cs.city_code||'',
+      ...dayVals,
+      cs.firstScore?.toFixed(2)||'', cs.latestScore?.toFixed(2)||'',
+      cs.trendScore, trendLabels[cs.trend].label
+    ];
+  });
+  const csv = [header, ...rows].map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'captain_trend_export.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>
