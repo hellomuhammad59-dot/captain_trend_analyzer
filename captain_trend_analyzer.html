@@ -133,6 +133,19 @@
   .kpi.improve .num{color:var(--accent);}
   .kpi.decline .num{color:var(--bad);}
 
+  .day-cards{display:flex; flex-direction:column; gap:10px; margin-bottom:6px;}
+  .day-card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px;}
+  .day-card .day-head{font-size:13px; font-weight:700; color:var(--text); margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  .day-card .day-head .idx{color:var(--dim); font-weight:400; font-size:12px;}
+  .day-card .metrics{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px;}
+  .day-metric .val{font-size:18px; font-weight:700;}
+  .day-metric .lbl{font-size:11px; color:var(--dim); margin-top:2px;}
+  .day-metric .delta{font-size:11px; font-weight:700; margin-top:4px; display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:100px;}
+  .day-metric .delta.up{color:var(--accent); background:var(--accent-dim);}
+  .day-metric .delta.down{color:var(--bad); background:var(--bad-dim);}
+  .day-metric .delta.flat{color:var(--warn); background:var(--warn-dim);}
+  .day-metric .delta.na{color:var(--dim); background:#232a35;}
+
   table{width:100%; border-collapse:collapse; font-size:13px;}
   thead th{
     text-align:right;
@@ -251,7 +264,8 @@ const COLMAP = {
   on_time_pickups: ['on_time_pickups','average of on_time_pickups'],
   pickup_success_pct: ['pickup_success_pct','average of pickup_success_pct'],
   on_time_deliveries: ['on_time_deliveries','average of on_time_deliveries'],
-  success_rate_pct: ['prefomance','prefomance ','performance','success_rate_pct','average of success_rate_pct','average of delivery_success_rate_pct','delivery_success_rate_pct'],
+  success_rate_pct: ['prefomance','prefomance ','performance'],
+  delivery_success_rate_pct: ['delivery_success_rate_pct','average of delivery_success_rate_pct','success_rate_pct','average of success_rate_pct'],
   avg_delay_min: ['avg_delay_min','average of avg_delay_min'],
   max_delay_min: ['max_delay_min','average of max_delay_min'],
   avg_customer_handling_min: ['avg_customer_handling_min','average of avg_customer_handling_min'],
@@ -378,6 +392,7 @@ function ingestSheet(json, idx, filename){
       total_orders: toNum(get('total_orders')),
       pickup_success_pct: toNum(get('pickup_success_pct')),
       success_rate_pct: toNum(get('success_rate_pct')),
+      delivery_success_rate_pct: toNum(get('delivery_success_rate_pct')),
       avg_delay_min: toNum(get('avg_delay_min')),
       customer_handling_success_pct: toNum(get('customer_handling_success_pct')),
       is_bad: toNum(get('is_bad'))
@@ -430,11 +445,12 @@ function processAndRender(){
     if(r.city_code) cs.city_code = r.city_code;
     if(r.store_code) cs.store_code = r.store_code;
 
-    if(!cs.byDay[r.day]) cs.byDay[r.day] = {n:0, orders:0, success_sum:0, success_n:0, delay_sum:0, delay_n:0, pickup_sum:0, pickup_n:0, handling_sum:0, handling_n:0, bad_sum:0};
+    if(!cs.byDay[r.day]) cs.byDay[r.day] = {n:0, orders:0, success_sum:0, success_n:0, delivery_sum:0, delivery_n:0, delay_sum:0, delay_n:0, pickup_sum:0, pickup_n:0, handling_sum:0, handling_n:0, bad_sum:0};
     const d = cs.byDay[r.day];
     d.n += 1;
     if(r.total_orders!==null) d.orders += r.total_orders;
     if(r.success_rate_pct!==null){ d.success_sum += r.success_rate_pct; d.success_n++; }
+    if(r.delivery_success_rate_pct!==null){ d.delivery_sum += r.delivery_success_rate_pct; d.delivery_n++; }
     if(r.avg_delay_min!==null){ d.delay_sum += r.avg_delay_min; d.delay_n++; }
     if(r.pickup_success_pct!==null){ d.pickup_sum += r.pickup_success_pct; d.pickup_n++; }
     if(r.customer_handling_success_pct!==null){ d.handling_sum += r.customer_handling_success_pct; d.handling_n++; }
@@ -450,6 +466,7 @@ function processAndRender(){
         day,
         orders: d.orders,
         success_rate_pct: d.success_n ? d.success_sum/d.success_n : null,
+        delivery_success_rate_pct: d.delivery_n ? d.delivery_sum/d.delivery_n : null,
         avg_delay_min: d.delay_n ? d.delay_sum/d.delay_n : null,
         pickup_success_pct: d.pickup_n ? d.pickup_sum/d.pickup_n : null,
         customer_handling_success_pct: d.handling_n ? d.handling_sum/d.handling_n : null,
@@ -635,24 +652,63 @@ function renderTable(){
 }
 
 // ---------- Detail modal ----------
+function avgOf(arr, key){
+  const vals = arr.map(d=>d[key]).filter(v=>v!==null && v!==undefined);
+  if(!vals.length) return null;
+  return vals.reduce((a,b)=>a+b,0)/vals.length;
+}
+
+// Build the delta badge comparing current day's value to the previous day's value for the same metric
+function deltaBadge(curr, prev){
+  if(curr===null || curr===undefined) return `<span class="delta na">— لا توجد بيانات</span>`;
+  if(prev===null || prev===undefined) return `<span class="delta na">أول قياس</span>`;
+  const diff = (curr - prev) * 100; // percentage points
+  const rounded = Math.round(diff*10)/10;
+  if(rounded > 0.4) return `<span class="delta up">▲ تحسن +${rounded}%</span>`;
+  if(rounded < -0.4) return `<span class="delta down">▼ تراجع ${rounded}%</span>`;
+  return `<span class="delta flat">― مستقر</span>`;
+}
+
 function openDetail(captainId){
   const cs = captainSeries[captainId];
   if(!cs) return;
   const t = trendLabels[cs.trend];
   const modal = document.getElementById('modalContent');
+
+  const dayCardsHtml = cs.days.map((d,i)=>{
+    const prev = i>0 ? cs.days[i-1] : null;
+    const pickupVal = d.pickup_success_pct;
+    const deliveryVal = d.delivery_success_rate_pct;
+    const handlingVal = d.customer_handling_success_pct;
+    const fmt = v => v!==null && v!==undefined ? (v*100).toFixed(1)+'%' : '—';
+    return `
+      <div class="day-card">
+        <div class="day-head"><span class="idx">أداء ${i+1}</span> · ${d.day}</div>
+        <div class="metrics">
+          <div class="day-metric">
+            <div class="val"><span dir="ltr">${fmt(pickupVal)}</span></div>
+            <div class="lbl">Average of pickup_success_pct</div>
+            ${deltaBadge(pickupVal, prev?prev.pickup_success_pct:null)}
+          </div>
+          <div class="day-metric">
+            <div class="val"><span dir="ltr">${fmt(deliveryVal)}</span></div>
+            <div class="lbl">Average of delivery_success_rate_pct</div>
+            ${deltaBadge(deliveryVal, prev?prev.delivery_success_rate_pct:null)}
+          </div>
+          <div class="day-metric">
+            <div class="val"><span dir="ltr">${fmt(handlingVal)}</span></div>
+            <div class="lbl">Average of customer_handling_success_pct</div>
+            ${deltaBadge(handlingVal, prev?prev.customer_handling_success_pct:null)}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
   modal.innerHTML = `
     <span class="close" id="modalClose2">&times;</span>
     <h2>${escapeHtml(cs.name||'—')} <span style="color:var(--dim); font-weight:400;">#${cs.captain_id}</span></h2>
-    <div class="sub">${cs.store_code||'—'} · ${cs.city_code||'—'} · <span class="badge ${t.cls}">${t.icon} ${t.label}</span></div>
-    <div class="kpi-grid">
-      <div class="kpi ${cs.trendScore>0?'improve':cs.trendScore<0?'decline':''}">
-        <div class="num"><span dir="ltr">${cs.trendScore>0?'+':''}${cs.trendScore}%</span></div>
-        <div class="lbl">التغير في الأداء (performance)</div>
-      </div>
-      <div class="kpi"><div class="num">${cs.days.length}</div><div class="lbl">عدد أيام الرصد</div></div>
-      <div class="kpi"><div class="num"><span dir="ltr">${cs.firstScore!==null?cs.firstScore.toFixed(1)+'%':'—'}</span></div><div class="lbl">متوسط أداء أول فترة</div></div>
-      <div class="kpi"><div class="num"><span dir="ltr">${cs.latestScore!==null?cs.latestScore.toFixed(1)+'%':'—'}</span></div><div class="lbl">متوسط أداء آخر فترة</div></div>
-    </div>
+    <div class="sub">${cs.store_code||'—'} · ${cs.city_code||'—'} · <span class="badge ${t.cls}">${t.icon} ${t.label}</span> · عدد أيام/ملفات الرصد: ${cs.days.length}</div>
+    <div class="day-cards">${dayCardsHtml}</div>
     <div class="chart-box"><canvas id="detailChart" height="110"></canvas></div>
   `;
   document.getElementById('modalClose2').addEventListener('click', closeModal);
@@ -666,16 +722,22 @@ function openDetail(captainId){
       labels: cs.days.map(d=>d.day),
       datasets:[
         {
-          label:'الأداء (performance) %',
-          data: cs.days.map(d=>d.success_rate_pct!==null?+(d.success_rate_pct*100).toFixed(1):null),
+          label:'Pickup Success %',
+          data: cs.days.map(d=>d.pickup_success_pct!==null?+(d.pickup_success_pct*100).toFixed(1):null),
           borderColor:'#4fd1a5', backgroundColor:'rgba(79,209,165,0.1)',
           tension:0.3, spanGaps:true, yAxisID:'y'
         },
         {
-          label:'متوسط التأخير (دقيقة)',
-          data: cs.days.map(d=>d.avg_delay_min),
+          label:'Delivery Success %',
+          data: cs.days.map(d=>d.delivery_success_rate_pct!==null?+(d.delivery_success_rate_pct*100).toFixed(1):null),
+          borderColor:'#5aa9e6', backgroundColor:'rgba(90,169,230,0.1)',
+          tension:0.3, spanGaps:true, yAxisID:'y'
+        },
+        {
+          label:'Customer Handling Success %',
+          data: cs.days.map(d=>d.customer_handling_success_pct!==null?+(d.customer_handling_success_pct*100).toFixed(1):null),
           borderColor:'#e8b34a', backgroundColor:'rgba(232,179,74,0.1)',
-          tension:0.3, spanGaps:true, yAxisID:'y1'
+          tension:0.3, spanGaps:true, yAxisID:'y'
         }
       ]
     },
@@ -685,8 +747,7 @@ function openDetail(captainId){
       plugins:{ legend:{ labels:{ color:'#e7ebf1' } } },
       scales:{
         x:{ ticks:{ color:'#8b93a1' }, grid:{ color:'rgba(255,255,255,0.04)' } },
-        y:{ position:'left', ticks:{ color:'#8b93a1' }, grid:{ color:'rgba(255,255,255,0.04)' }, title:{display:true,text:'%',color:'#8b93a1'} },
-        y1:{ position:'right', ticks:{ color:'#8b93a1' }, grid:{ display:false }, title:{display:true,text:'دقيقة',color:'#8b93a1'} }
+        y:{ position:'left', ticks:{ color:'#8b93a1' }, grid:{ color:'rgba(255,255,255,0.04)' }, title:{display:true,text:'%',color:'#8b93a1'} }
       }
     }
   });
